@@ -1,0 +1,15 @@
+{
+  "name": "stress-monitor-backend",
+  "version": "1.0.0",
+  "description": "Backend for Stress & Focus Monitor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.1.0",
+    "express": "^4.18.2",
+    "mysql2": "^3.3.0"
+  }
+}
