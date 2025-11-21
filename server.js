@@ -94,7 +94,11 @@ app.post('/api/data', async (req, res) => {
 // ------------------ STATIC FILES (SERVE LAST!) ------------------
 
 // Serve index.html, style.css, script.js
-app.use(express.static(path.join(__dirname, '..')));
+//app.use(express.static(path.join(__dirname, '..')));
+app.use(express.static(__dirname));
+app.get('/*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // ------------------ START SERVER ------------------
 app.listen(PORT, '0.0.0.0', () => {
