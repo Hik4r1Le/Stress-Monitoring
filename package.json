@@ -11,6 +11,7 @@
     "dotenv": "^16.1.0",
     "express": "^4.21.2",
     "mysql2": "^3.3.0",
-    "path-to-regexp": "^8.3.0"
+    "path-to-regexp": "^8.3.0",
+    "pg": "^8.12.0"
   }
 }
