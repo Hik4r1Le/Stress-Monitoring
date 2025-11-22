@@ -93,7 +93,7 @@ app.post('/api/data', async (req, res) => {
   try {
     await query(
       `INSERT INTO monitoring (spo2, bpm, status, recorded, emotion, confidence)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [spo2, bpm, status, time, emotion, confidence]
     );
     console.log(`Saved → ${time} | SpO2:${spo2}% | BPM:${bpm} | ${status} | ${emotion}`);
