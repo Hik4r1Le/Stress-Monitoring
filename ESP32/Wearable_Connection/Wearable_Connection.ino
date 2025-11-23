@@ -45,6 +45,7 @@ struct_message myData;
 int  spo2 = 0, heartRate = 0;
 String time0 = "00:00:00";
 bool valid = false; //data validation
+bool ntpSynced = false; //time validation - if time is invalid, data can still be computed
 
 const unsigned long INTERVAL = 1000; //data collection interval, short for testing
 unsigned long lastRead = 0;
@@ -189,11 +190,16 @@ void initESPNow() {
 /* ---- Time ---- */
 String getTimeString() {
   struct tm ti;
-  if (!getLocalTime(&ti)) return "--:--:--";
-  char buf[9];
-  strftime(buf, sizeof(buf), "%H:%M:%S", &ti);
-  time0 = String(buf);
-  return time0;
+  if (getLocalTime(&ti)) {
+    ntpSynced = true;
+    char buf[9];
+    strftime(buf, sizeof(buf), "%H:%M:%S", &ti);
+    time0 = String(buf);
+    return time0;
+  } else {
+    ntpSynced = false;
+    return "--:--:--";
+  }
 }
 
 /* ---- Sensor read ---- */
@@ -287,6 +293,20 @@ void calculateVitals() {
 
 void collectBaseline(float hr) {
   if (baselineReady) return;
+
+  if (hr > 170) {
+    Serial.println("HR is too high during baseline, you're not relaxed");
+    systemState = BASELINING;
+    
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println(F("TOO HIGH HR!"));
+    display.println(F("Sit still & calm"));
+    display.display();
+    delay(3000);
+    return;
+  }
 
   if (baselineCount == 0) {
     HR_filtered = hr;
@@ -492,7 +512,11 @@ void loop() {
         updateDisplay();
         Serial.printf("HR:%d bpm | SpO2:%d%% | %s\n",
                 heartRate, spo2, time0.c_str());
-        sendData();
+        if (ntpSynced) {
+          sendData();
+        } else {
+          Serial.println("Skipped send: time not synced or invalid reading");
+        }
         //updateVibration();
       }
     } else {

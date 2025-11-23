@@ -74,7 +74,7 @@ app.get('/api/latest', async (req, res) => {
 app.get('/api/history', async (req, res) => {
   try {
     const result = await query(`
-      SELECT bpm, recorded FROM monitoring ORDER BY recorded DESC LIMIT 20
+      SELECT bpm, recorded FROM monitoring ORDER BY id DESC LIMIT 20
     `);
     res.json(result.rows.reverse());
   } catch (err) {
