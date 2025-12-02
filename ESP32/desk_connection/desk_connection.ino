@@ -2,10 +2,11 @@
 #include <esp_now.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
-#include <LittleFS.h>
 #include <HTTPClient.h>
 #include <WiFiClient.h>
+#include <WiFiUdp.h>
 #include "esp_camera.h"
+#include "config.h"
 
 // ================ CAMERA CONFIG ================
 #define PWDN_GPIO_NUM 32
@@ -25,11 +26,9 @@
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-// ================ FLY.IO ENDPOINT ================
-const char* ai_endpoint = "https://emotion.fly.dev/predict";
+#define MULTIPART_BUFFER_SIZE 32768
 
-const char* ssid = "Meow ~";
-const char* password = "nhaconuoimeo";
+
 
 typedef struct __attribute__((packed)) struct_message {
   char time1[9];
@@ -53,6 +52,8 @@ TFT_eSPI tft = TFT_eSPI();
 String currentEmotion = "----";  // default: no face detected
 float currentConfidence = 0.0;
 const uint32_t PHOTO_COOLDOWN = 3000;
+
+uint8_t multipartBuffer[MULTIPART_BUFFER_SIZE];
 
 const char* normalMsgs[4] = {
   "You're focused and steady — keep going",
@@ -87,26 +88,130 @@ camera_fb_t* takePhoto() {
   return fb;  // caller must call esp_camera_fb_return(fb) later
 }
 
+// String sendPhoto(camera_fb_t* fb) {
+//   if (!fb) return "";
+
+//   HTTPClient http;
+//   http.setTimeout(10000);
+//   http.begin("https://emotion.fly.dev/predict");  //will change to AWS
+//   http.addHeader("Content-Type", "image/jpeg");
+
+//   Serial.print("[AI] Sending... ");
+//   int code = http.POST(fb->buf, fb->len);
+
+//   String result = "";
+//   if (code == 200) {
+//     result = http.getString();
+//     Serial.printf("OK → %s\n", result.c_str());
+//   } else {
+//     Serial.printf("Failed (HTTP %d)\n", code);
+//   }
+//   http.end();
+//   return result;  // e.g. {"emotion":"happy","confidence":0.89}
+// }
+
 String sendPhoto(camera_fb_t* fb) {
-  if (!fb) return "";
-
+  if (!fb || fb->len == 0) {
+    Serial.println("[AI] No photo to send");
+    return "";
+  }
   HTTPClient http;
-  http.setTimeout(10000);
-  http.begin("https://emotion.fly.dev/predict");  //will change to AWS
-  http.addHeader("Content-Type", "image/jpeg");
+  http.setTimeout(20000);  // Bump to 20s for AWS latency
+  // Build multipart body (keep your existing code here — unchanged)
+  String boundary = "----ESP32Boundary123456";
+  String head = "--" + boundary + "\r\n";
+  head += "Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n";
+  head += "Content-Type: image/jpeg\r\n\r\n";
 
-  Serial.print("[AI] Sending... ");
-  int code = http.POST(fb->buf, fb->len);
+  String tail = "\r\n--" + boundary + "\r\n";
+  tail += "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n";
+  tail += "esp32_cam_1\r\n";
+  tail += "--" + boundary + "--\r\n";
 
+  uint16_t headLen = head.length();
+  uint16_t tailLen = tail.length();
+  uint32_t totalLen = headLen + fb->len + tailLen;
+
+  if (totalLen > MULTIPART_BUFFER_SIZE) {
+    Serial.printf("[AI] Body too big: %d > %d bytes\n", totalLen, MULTIPART_BUFFER_SIZE);
+    return "";
+  }
+
+  memcpy(multipartBuffer, head.c_str(), headLen);
+  memcpy(multipartBuffer + headLen, fb->buf, fb->len);
+  memcpy(multipartBuffer + headLen + fb->len, tail.c_str(), tailLen);
+
+  // NEW: Debug connection before POST
+  Serial.printf("[DEBUG] WiFi status: %d | IP: %s\n", WiFi.status(), WiFi.localIP().toString().c_str());
+  http.begin(EMOTION_API_URL);
+  http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
+  http.addHeader("User-Agent", "ESP32-CAM/1.0");  // NEW: Helps AWS accept request
+
+  Serial.print("[AI] Sending photo to AWS... ");
+  Serial.printf("%d bytes (image: %d)\n", totalLen, fb->len);
+
+  int code = http.POST(multipartBuffer, totalLen);
+
+  // NEW: Detailed error logging
+  if (code < 0) {
+    Serial.printf("[DEBUG] HTTP POST failed: %s\n", http.errorToString(code).c_str());
+    if (code == HTTPC_ERROR_CONNECTION_REFUSED) Serial.println("[DEBUG] Connection refused — check AWS firewall/port 8000");
+    if (code == HTTPC_ERROR_READ_TIMEOUT) Serial.println("[DEBUG] Read timeout — slow network?");
+  }
+ 
   String result = "";
-  if (code == 200) {
+  if (code == HTTP_CODE_OK) {
     result = http.getString();
-    Serial.printf("OK → %s\n", result.c_str());
+    Serial.printf("[AI] Success! → %s\n", result.c_str());
   } else {
-    Serial.printf("Failed (HTTP %d)\n", code);
+    Serial.printf("[AI] Failed → HTTP %d\n", code);
+    if (code > 0) {
+      String errorBody = http.getString();
+      Serial.println("[DEBUG] Server response body: " + errorBody);  // e.g., FastAPI 422 details
+    }
   }
   http.end();
-  return result;  // e.g. {"emotion":"happy","confidence":0.89}
+  return result;
+}
+
+// bool parseEmotion(const String& json, String& emotion, float& confidence) {
+//   int ePos = json.indexOf("\"emotion\":\"") + 11;
+//   int cPos = json.indexOf("\"confidence\":") + 13;
+
+//   if (ePos < 11 || cPos < 13) return false;
+
+//   int eEnd = json.indexOf("\"", ePos);
+//   int cEnd = json.indexOf(",", cPos);
+//   if (cEnd == -1) cEnd = json.indexOf("}", cPos);
+
+//   emotion = json.substring(ePos, eEnd);
+//   confidence = json.substring(cPos, cEnd).toFloat();
+//   return true;
+// }
+
+// Parse AWS response → extract label and confidence
+bool parseEmotion(const String& json, String& emotion, float& confidence) {
+  if (json.length() == 0) return false;
+
+  int labelPos = json.indexOf("\"label\":");
+  int confPos = json.indexOf("\"confidence\":");
+
+  if (labelPos == -1 || confPos == -1) return false;
+
+  // Extract label
+  int start = json.indexOf('"', labelPos + 8) + 1;
+  int end = json.indexOf('"', start);
+  if (start == -1 || end == -1) return false;
+  emotion = json.substring(start, end);
+
+  // Extract confidence (float)
+  start = json.indexOf(':', confPos) + 1;
+  end = json.indexOf(',', start);
+  if (end == -1) end = json.indexOf('}', start);
+  String confStr = json.substring(start, end);
+  confidence = confStr.toFloat();
+
+  return true;
 }
 
 void sendFullData() {
@@ -116,18 +221,25 @@ void sendFullData() {
   float confidence = 0.0;
 
   // 1. Try to get emotion from AI
-  camera_fb_t* fb = takePhoto();
-  if (fb) {
+  // Try 2 times 
+  for (int attempt = 0; attempt < 2; attempt++) {
+    camera_fb_t* fb = takePhoto();
+    if (!fb) {
+      Serial.println("[Camera] Capture failed");
+      delay(1000);
+      continue;
+    }
+
     String json = sendPhoto(fb);
     esp_camera_fb_return(fb);
 
-    if (parseEmotion(json, emotion, confidence)) {
-      Serial.printf("[AI] Detected: %s (%.1f%%)\n", emotion.c_str(), confidence * 100);
+    if (parseEmotion(json, emotion, confidence) && confidence > 0.3) {  // only accept if confident
+      Serial.printf("[AI] Success on attempt %d: %s (%.0f%%)\n", attempt+1, emotion.c_str(), confidence*100);
+      break;
     } else {
-      Serial.println("[AI] No face or failed");
+      Serial.printf("[AI] Failed attempt %d — retrying...\n", attempt+1);
+      delay(1500);
     }
-  } else {
-    Serial.println("[Camera] Capture failed");
   }
 
   // 2. Update screen
@@ -156,7 +268,7 @@ void sendFullData() {
 
   HTTPClient http;
   http.setTimeout(10000);
-  http.begin("https://stress-monitoring.onrender.com/api/data");
+  http.begin(RENDER_API_URL);
   http.addHeader("Content-Type", "application/json");
   int code = http.POST(payload);
   Serial.printf("[Render] Full data sent → HTTP %d\n", code);
@@ -210,21 +322,6 @@ void centerText(const char* msg, int y, uint16_t color, uint8_t textSize = 2) {
   tft.println(line2);
 }
 
-bool parseEmotion(const String& json, String& emotion, float& confidence) {
-  int ePos = json.indexOf("\"emotion\":\"") + 11;
-  int cPos = json.indexOf("\"confidence\":") + 13;
-
-  if (ePos < 11 || cPos < 13) return false;
-
-  int eEnd = json.indexOf("\"", ePos);
-  int cEnd = json.indexOf(",", cPos);
-  if (cEnd == -1) cEnd = json.indexOf("}", cPos);
-
-  emotion = json.substring(ePos, eEnd);
-  confidence = json.substring(cPos, cEnd).toFloat();
-  return true;
-}
-
 // void sendVitals(int16_t spo2, int16_t bpm, uint8_t stress, char time1[9]) {
 //     if (WiFi.status() != WL_CONNECTED) return;
 
@@ -235,7 +332,7 @@ bool parseEmotion(const String& json, String& emotion, float& confidence) {
 
 //     HTTPClient http;
 //     http.setTimeout(8000);
-//     http.begin("https://your-app-name.onrender.com/api/data");  // CHANGE THIS!
+//     http.begin("https://your-app-name.onrender.com/api/data");
 //     http.addHeader("Content-Type", "application/json");
 
 //     String payload = "{\"spo2\":" + String(spo2) +
@@ -396,7 +493,7 @@ void initCamera() {
   config.pixel_format = PIXFORMAT_JPEG;
   config.frame_size   = FRAMESIZE_QVGA;  
   config.jpeg_quality = 12;
-  config.fb_count     = 2;
+  config.fb_count     = 1;
   config.grab_mode    = CAMERA_GRAB_LATEST;
 
   const int MAX_RETRIES = 10;
@@ -477,9 +574,9 @@ void loop() {
   //photo -> AI -> return to the device -> send full packet to Render
   if (needToSend && pending.valid && (millis() - lastPhotoTime > PHOTO_COOLDOWN)) {
     needToSend = false;
-    lastPhotoTime = millis();         // mark the time we started this attempt
+    lastPhotoTime = millis();
     
-    sendFullData();                   // ← now safe: camera has time to finish
+    sendFullData();
   }
 
   // Emotion timeout after 45 seconds

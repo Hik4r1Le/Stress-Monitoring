@@ -7,10 +7,10 @@
 #include <Adafruit_SSD1306.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include "config.h"
 
 // ==================== CONFIG ====================
-const char* ssid      = "Meow ~";
-const char* password  = "nhaconuoimeo";
+
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 7 * 3600;   // UTC+7
 const int   daylightOffset_sec = 0;
@@ -116,11 +116,6 @@ void connectWiFi() {
   }
   display.display();
   delay(1000);
-}
-
-/* ---- NTP ---- */
-void initNTP() {
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 }
 
 /* ---- MAX30102 ---- */
@@ -489,7 +484,7 @@ void setup() {
 } else {
   Serial.println("Failed to get AP channel - using current");
 }     
-  initNTP();
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   initESPNow();       
   initSensor();
   // ledcAttach(VIB_PIN, 500, 8);  // Pin, freq 500Hz, 8-bit res
@@ -531,9 +526,9 @@ void loop() {
         display.display();
       } else {
         display.clearDisplay();
-        display.setTextSize(1);
+        display.setTextSize(2);
         display.setCursor(0, 20);
-        display.println("No finger / bad signal");
+        display.println("Bad signal");
         display.display();
       }
     }
