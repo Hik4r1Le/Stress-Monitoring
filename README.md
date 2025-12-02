@@ -8,6 +8,7 @@ A wearable and desk-based monitoring system developed for tracking user stress l
 - [Configuration](#configuration)
 - [Setup and Deployment](#setup-and-deployment)
 - [Troubleshooting](#troubleshooting)
+- [Other](#other)
 - [Project Structure](#project-structure)
 
 ## Features
@@ -55,8 +56,8 @@ Optional: Vibration motor for haptic feedback on wearable (commented out in code
   - Chart.js (loaded via CDN in index.html)
 ## Configuration
 - ESP32 code:
-  - ESP32/Wearable_Connection/config.h: Change to the WiFi credentials you wish to use.
-  - ESP32/desk_connection/config.h: Change to the WiFi credentials you wish to use, update API endpoints, follow instructions in the file.
+  - `ESP32/Wearable_Connection/config.h`: Change to the WiFi credentials you wish to use.
+  - `ESP32/desk_connection/config.h`: Change to the WiFi credentials you wish to use, update API endpoints, follow instructions in the file.
 - Backend:
   - Update .env with your database credentials:
     - For local: DB_HOST=localhost, DB_USER=root, DB_PASSWORD=yourpassword, DB_NAME=stress_monitor
@@ -98,6 +99,9 @@ Optional: Vibration motor for haptic feedback on wearable (commented out in code
 - No Data on Dashboard: Check polling (console logs), server logs on Render.
 - Emotion Detection: Ensure AI endpoint is up; fallback to "----" if no face.
 - Render Deployment Issues: Check Render logs for DB connection errors; ensure SSL is enabled for Postgres.
+
+## Other
+- You can use `stress_sim_demo.py`to run simulation before adjusting `alpha` value to match your demands.
 
 ## Project Structure
 ![alt text](image.png)
