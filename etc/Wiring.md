@@ -19,11 +19,11 @@
 |---------------------|------------------------|---------------|--------------------------------------------|
 | TFT Display         | VCC                    | 3.3V or 5V    | Most TFTs work fine with 3.3V              |
 |                     | GND                    | GND           |                                            |
-|                     | CS                     | GPIO 5        | Default in TFT_eSPI setup                  |
+|                     | CS                     | GPIO 15       | Default in TFT_eSPI setup                  |
 |                     | DC                     | GPIO 2        |                                            |
-|                     | RST                    | GPIO 4 or -1  | Can be left floating (-1 in code)          |
-|                     | MOSI                   | GPIO 23       |                                            |
-|                     | SCK                    | GPIO 18       |                                            |
+|                     | RST                    | GPIO 4        | Can be left floating (-1 in code)          |
+|                     | SDA                    | GPIO 13       |                                            |
+|                     | SCL                    | GPIO 14       |                                            |
 | Camera (OV2640)     | Built-in               | —             | No extra wiring needed                     |
 
 > **Power**: ESP32-CAM must be powered via **5V VIN** or USB programmer (FTDI)
